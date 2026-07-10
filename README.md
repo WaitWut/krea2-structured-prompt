@@ -1,10 +1,12 @@
 # Krea2 Structured Prompt
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/WaitWut/krea2-structured-prompt/blob/main/LICENSE)
 
 A structured prompt-builder node for [ComfyUI](https://github.com/comfyanonymous/ComfyUI), tuned for **Krea-2 / K2**. Instead of writing freehand prose, you fill in structured fields — scene, any number of characters, composition, lighting, style — and the node assembles them into the flowing, two-paragraph prose that Krea-2 was actually trained to read. Wire the output straight into the `prompt` input of [ethanfel's Text Encode (Krea2)](https://github.com/ethanfel/ComfyUI-Krea2TextEncoder).
 
 This node **does not replace or re-implement** that encoder — it only builds the string that goes into it.
+
+![Krea2 Structured Prompt node, empty state](images/node-empty.png)
 
 ## Why structure, not freeform
 
@@ -39,7 +41,7 @@ Empty fields silently disappear; an entirely empty paragraph is dropped rather t
 
 **Via git clone (recommended):**
 
-```bash
+```
 cd ComfyUI/custom_nodes
 git clone https://github.com/WaitWut/krea2-structured-prompt.git
 ```
@@ -58,7 +60,6 @@ ComfyUI/custom_nodes/krea2-structured-prompt/
 ```
 
 Then **restart ComfyUI completely** (not just a browser refresh — new custom nodes only load on a fresh process start).
-
 > **ComfyUI Desktop users:** the actual `custom_nodes` path may not be where you'd expect. Check **Settings → System Paths** in the app to find it.
 
 No extra Python dependencies — assembly is pure standard library.
@@ -71,10 +72,11 @@ No extra Python dependencies — assembly is pure standard library.
 4. Wire the **`prompt`** output into `Text Encode (Krea2)`'s `prompt` input.
 5. (Optional) Wire **`prompt_json`** into a text display / save node to inspect the raw field values.
 
+![Krea2 Structured Prompt node, filled in with scene, style, and one character](images/node-filled.png)
+
 ### How the two paragraphs come together
 
 Given two characters and a scene, plus composition/lighting/style, the output reads roughly like:
-
 > A woman in her 30s with short dark hair and sharp features, standing confidently with arms crossed gazing directly at camera, tailored charcoal wool coat and leather gloves. An elderly man with weathered skin and a thick white beard, seated and leaning forward. In a sun-drenched Mediterranean coastal town at golden hour, whitewashed buildings and narrow cobblestone streets.
 >
 > Medium shot, eye-level, shallow depth of field. Golden hour side lighting, warm glow. Photorealistic photography, cinematic color grading.
@@ -99,4 +101,4 @@ Bug reports, feature requests, and PRs are welcome via [GitHub Issues](https://g
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/WaitWut/krea2-structured-prompt/blob/main/LICENSE)

@@ -20,3 +20,6 @@ Thumbs.db
 # Local dev-only material (spec/handoff notes, scratch) - not part of the
 # published node package
 dev/
+
+# Claude Code local machine state (permissions, etc.) - not for publishing
+.claude/
