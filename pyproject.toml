@@ -1,0 +1,16 @@
+[project]
+name = "krea2-structured-prompt"
+description = "A structured prompt-builder node for Krea-2 / K2: fill scene, N characters, composition, lighting, and style fields and assemble them into Krea2-native flowing prose that feeds straight into Text Encode (Krea2)."
+version = "1.0.0"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/WaitWut/krea2-structured-prompt"
+"Bug Tracker" = "https://github.com/WaitWut/krea2-structured-prompt/issues"
+
+[tool.comfy]
+PublisherId = "waitwut"
+DisplayName = "Krea2 Structured Prompt"
+Icon = ""

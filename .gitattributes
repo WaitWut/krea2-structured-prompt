@@ -1,0 +1,27 @@
+# Normalize line endings for everyone, regardless of platform or local
+# core.autocrlf setting. Text files are stored as LF in the repository;
+# Git will still check them out using the OS-appropriate line ending
+# locally if core.autocrlf is set, but won't warn about it or produce
+# inconsistent diffs between contributors on different platforms.
+
+* text=auto eol=lf
+
+*.py text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+LICENSE text eol=lf
+
+# Images and other binary assets should never have line-ending conversion
+# applied at all
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
