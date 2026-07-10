@@ -3,19 +3,23 @@ import { app } from "../../../scripts/app.js";
 // ===========================================================================
 // Krea2 Structured Prompt - frontend extension
 // ===========================================================================
-// Two pieces of custom UI live here:
-//   1. A preset COMBO above each fixed field (scene / composition / lighting /
-//      style / technical_details). Picking a preset fills the paired multiline
-//      text widget (with a confirm-before-overwrite guard if the user has
-//      typed their own content), then snaps the combo back to "Custom". The
-//      text widget is the only value Python reads - the combo is a convenience
-//      filler, never a separate data path, so these combos are serialize:false
-//      and are never sent to the backend.
-//   2. A dynamic character list rendered as a DOM widget, serialised into the
-//      hidden "characters_data" STRING widget as a JSON array of
-//      {description, pose_action, clothing_props}. Add / remove / drag-reorder
-//      blocks; each sub-field has its own preset <select> + textarea. Same
-//      loras_data-style JSON-blob pattern as the Ultimate Lora Loader.
+// The entire node UI is drawn in a single DOM widget so every text field -
+// the five fixed fields (scene / composition / lighting / style /
+// technical_details) AND the three sub-fields inside each character block -
+// is the same custom, vertically-resizable textarea with a matching preset
+// dropdown. Grab any textarea's bottom-right corner to drag it taller; the
+// node grows to fit.
+//
+// Data path:
+//   * Each fixed field is backed by its native STRING widget (declared in
+//     INPUT_TYPES). That native widget is hidden but kept in node.widgets so
+//     ComfyUI still serialises it and sends its value to Python; our visible
+//     textarea just writes into it. The preset dropdown is pure UI sugar and
+//     is never sent to the backend.
+//   * The dynamic character list is serialised into the hidden
+//     "characters_data" STRING widget as a JSON array of {description,
+//     pose_action, clothing_props} - the loras_data blob pattern from the
+//     Ultimate Lora Loader.
 //
 // CSS prefix for everything in here: k2sp-  (krea2 structured prompt)
 // ===========================================================================
@@ -94,6 +98,16 @@ const CHAR_PRESETS = {
   ],
 };
 
+// The five fixed fields, in on-node display order. `key` matches the native
+// STRING widget name declared in INPUT_TYPES.
+const FIXED_FIELDS = [
+  { key: "scene", label: "Scene" },
+  { key: "composition", label: "Composition" },
+  { key: "lighting", label: "Lighting" },
+  { key: "style", label: "Style" },
+  { key: "technical_details", label: "Technical details" },
+];
+
 // Human-readable labels + storage keys for the three character sub-fields, in
 // the order they appear in a block (and in the assembled sentence).
 const CHAR_SUBFIELDS = [
@@ -121,8 +135,9 @@ if (!document.getElementById(STYLE_ID)) {
       flex-direction: column;
       box-sizing: border-box;
       padding: 6px;
-      gap: 8px;
-      overflow: hidden;
+      gap: 10px;
+      overflow: visible;
+      width: 100%;
     }
 
     .k2sp-section-label {
@@ -132,9 +147,70 @@ if (!document.getElementById(STYLE_ID)) {
       letter-spacing: 0.04em;
       text-transform: uppercase;
       user-select: none;
-      padding: 0 2px;
+      padding: 2px 2px 0 2px;
     }
 
+    /* --- A labelled field: header (label + preset select) + textarea. Used
+       for both the fixed fields and the character sub-fields. --- */
+    .k2sp-field { display: flex; flex-direction: column; gap: 3px; }
+    .k2sp-field-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .k2sp-field-label {
+      flex: 1 1 auto;
+      font-size: 11px;
+      color: #cfcfd6;
+      font-weight: 600;
+      user-select: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .k2sp-subfield-label {
+      flex: 1 1 auto;
+      font-size: 10px;
+      color: #888;
+      font-weight: 500;
+      user-select: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .k2sp-preset {
+      flex: 0 0 112px;
+      max-width: 112px;
+      background: #1c1c1f;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #bbb;
+      font-size: 10px;
+      padding: 2px 4px;
+      box-sizing: border-box;
+      cursor: pointer;
+    }
+    .k2sp-preset:focus { outline: none; border-color: #6d5aa8; color: #ddd; }
+
+    .k2sp-textarea {
+      width: 100%;
+      box-sizing: border-box;
+      resize: vertical;            /* the drag-to-resize handle the user wants */
+      min-height: 44px;
+      background: #1c1c1f;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #ddd;
+      font-size: 11px;
+      line-height: 1.4;
+      padding: 5px 7px;
+      font-family: inherit;
+    }
+    .k2sp-textarea:focus { outline: none; border-color: #6d5aa8; }
+    .k2sp-field .k2sp-textarea { min-height: 52px; }
+
+    /* --- Character block --- */
     .k2sp-char-block {
       display: flex;
       flex-direction: column;
@@ -150,11 +226,7 @@ if (!document.getElementById(STYLE_ID)) {
     .k2sp-char-block.drop-target-above { border-top: 2px solid #a78bfa; }
     .k2sp-char-block.drop-target-below { border-bottom: 2px solid #a78bfa; }
 
-    .k2sp-char-head {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
+    .k2sp-char-head { display: flex; align-items: center; gap: 6px; }
     .k2sp-drag-handle {
       flex: 0 0 16px;
       width: 16px;
@@ -192,52 +264,6 @@ if (!document.getElementById(STYLE_ID)) {
     .k2sp-remove:hover { background: #3a3a3e; color: #f87171; }
     .k2sp-remove svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; }
 
-    .k2sp-subfield { display: flex; flex-direction: column; gap: 3px; }
-    .k2sp-subfield-head {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .k2sp-subfield-label {
-      flex: 1 1 auto;
-      font-size: 10px;
-      color: #888;
-      user-select: none;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .k2sp-preset {
-      flex: 0 0 108px;
-      max-width: 108px;
-      background: #1c1c1f;
-      border: 1px solid #444;
-      border-radius: 4px;
-      color: #bbb;
-      font-size: 10px;
-      padding: 2px 4px;
-      box-sizing: border-box;
-      cursor: pointer;
-    }
-    .k2sp-preset:focus { outline: none; border-color: #6d5aa8; color: #ddd; }
-
-    .k2sp-textarea {
-      width: 100%;
-      box-sizing: border-box;
-      resize: vertical;
-      min-height: 44px;
-      background: #1c1c1f;
-      border: 1px solid #444;
-      border-radius: 4px;
-      color: #ddd;
-      font-size: 11px;
-      line-height: 1.35;
-      padding: 4px 6px;
-      font-family: inherit;
-    }
-    .k2sp-textarea:focus { outline: none; border-color: #6d5aa8; }
-
     .k2sp-add-btn {
       display: flex;
       align-items: center;
@@ -271,6 +297,12 @@ if (!document.getElementById(STYLE_ID)) {
       padding: 8px 4px;
       user-select: none;
     }
+    .k2sp-divider {
+      height: 1px;
+      background: #3a3a40;
+      margin: 2px 0;
+      border: none;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -289,13 +321,12 @@ const DRAG_ICON_SVG = `<svg viewBox="0 0 10 16" xmlns="http://www.w3.org/2000/sv
 </svg>`;
 
 // ---------------------------------------------------------------------------
-// Preset-fill helper (shared by fixed-field combos and character <select>s)
+// Preset-fill helpers (shared by fixed fields and character sub-fields)
 // ---------------------------------------------------------------------------
 // Overwrite policy: if the target text is empty, or exactly matches one of the
 // known preset strings for that field (i.e. it hasn't been hand-edited since a
 // preset was applied), overwrite silently. Otherwise the user has typed their
-// own content - ask before clobbering it. Cancel leaves the text untouched.
-// Returns true if the text was replaced, false otherwise.
+// own content - ask before clobbering it.
 
 function isKnownPresetOrEmpty(currentValue, presetList) {
   const cur = (currentValue || "").trim();
@@ -310,57 +341,6 @@ function confirmOverwrite() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Fixed-field preset combos
-// ---------------------------------------------------------------------------
-// Insert a COMBO widget directly above the named text widget. Selecting a
-// preset fills the text widget, then the combo snaps back to "Custom" so it
-// always reads as a momentary picker rather than displaying a long preset
-// string as its own value.
-
-function attachFieldPresetCombo(node, fieldName, presetList) {
-  const textWidget = node.widgets?.find((w) => w.name === fieldName);
-  if (!textWidget) return;
-
-  const options = [CUSTOM, ...presetList];
-  const combo = node.addWidget(
-    "combo",
-    `${fieldName}_preset`,
-    CUSTOM,
-    () => {}, // real handler assigned below
-    { values: options }
-  );
-  // Never serialise into the workflow or send to Python - it's pure UI sugar
-  // and always resets to "Custom" anyway.
-  combo.serialize = false;
-
-  combo.callback = (value) => {
-    if (value && value !== CUSTOM) {
-      const ok =
-        isKnownPresetOrEmpty(textWidget.value, presetList) || confirmOverwrite();
-      if (ok) {
-        textWidget.value = value;
-        // Fire the text widget's own callback if it has one, so anything
-        // listening for edits sees the change.
-        textWidget.callback?.(textWidget.value);
-      }
-    }
-    // Always snap back to the picker's neutral state.
-    combo.value = CUSTOM;
-    node.setDirtyCanvas(true, true);
-  };
-
-  // Move the combo to sit immediately above its text widget.
-  const ci = node.widgets.indexOf(combo);
-  if (ci !== -1) node.widgets.splice(ci, 1);
-  const ti = node.widgets.indexOf(textWidget);
-  node.widgets.splice(ti === -1 ? node.widgets.length : ti, 0, combo);
-}
-
-// ---------------------------------------------------------------------------
-// Character sub-field preset <select>
-// ---------------------------------------------------------------------------
-
 function makePresetSelect(presetList, getCurrentText, onApply) {
   const select = document.createElement("select");
   select.className = "k2sp-preset";
@@ -373,8 +353,7 @@ function makePresetSelect(presetList, getCurrentText, onApply) {
   presetList.forEach((preset, idx) => {
     const opt = document.createElement("option");
     opt.value = String(idx);
-    // Keep the dropdown readable - the full string is the title/tooltip.
-    opt.textContent = preset.length > 40 ? preset.slice(0, 39) + "…" : preset;
+    opt.textContent = preset.length > 42 ? preset.slice(0, 41) + "…" : preset;
     opt.title = preset;
     select.appendChild(opt);
   });
@@ -387,11 +366,52 @@ function makePresetSelect(presetList, getCurrentText, onApply) {
         isKnownPresetOrEmpty(getCurrentText(), presetList) || confirmOverwrite();
       if (ok) onApply(preset);
     }
-    // Reset back to the neutral "Preset…" label.
-    select.value = "__custom__";
+    select.value = "__custom__"; // snap back to the neutral label
   };
 
   return select;
+}
+
+// Build a labelled field: header (label + preset select) + resizable textarea.
+// `getValue`/`setValue` bind it to wherever the value actually lives (a native
+// widget for fixed fields, an entry object for character sub-fields).
+function makeField({ label, labelClass, presetList, getValue, setValue, onResize }) {
+  const field = document.createElement("div");
+  field.className = "k2sp-field";
+
+  const head = document.createElement("div");
+  head.className = "k2sp-field-head";
+
+  const lbl = document.createElement("span");
+  lbl.className = labelClass || "k2sp-field-label";
+  lbl.textContent = label;
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "k2sp-textarea";
+  textarea.rows = 2;
+  textarea.value = getValue() || "";
+  textarea.placeholder = label + "…";
+  textarea.oninput = () => setValue(textarea.value);
+  // A manual drag-resize doesn't fire input, so nudge the node to re-fit when
+  // the textarea's box changes size.
+  if (onResize && typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(() => onResize()).observe(textarea);
+  }
+
+  const select = makePresetSelect(
+    presetList,
+    () => textarea.value,
+    (preset) => {
+      textarea.value = preset;
+      setValue(preset);
+    }
+  );
+
+  head.appendChild(lbl);
+  head.appendChild(select);
+  field.appendChild(head);
+  field.appendChild(textarea);
+  return field;
 }
 
 // ---------------------------------------------------------------------------
@@ -409,31 +429,59 @@ app.registerExtension({
       const r = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
       const node = this;
 
-      // Give the node a bit more width by default - three sub-field textareas
-      // per character read cramped at the stock width. Only nudged once at
-      // creation, so a user's later manual resize isn't fought.
-      if (node.size && node.size[0] && node.size[0] < 340) {
-        node.setSize([Math.max(node.size[0], 340), node.size[1]]);
+      // Wider default - resizable textareas and preset dropdowns read cramped
+      // at the stock width. Only nudged once at creation.
+      if (node.size && node.size[0] && node.size[0] < 360) {
+        node.setSize([Math.max(node.size[0], 360), node.size[1]]);
       }
 
-      // --- Fixed-field preset combos ---
-      attachFieldPresetCombo(node, "scene", FIELD_PRESETS.scene);
-      attachFieldPresetCombo(node, "composition", FIELD_PRESETS.composition);
-      attachFieldPresetCombo(node, "lighting", FIELD_PRESETS.lighting);
-      attachFieldPresetCombo(node, "style", FIELD_PRESETS.style);
-      attachFieldPresetCombo(node, "technical_details", FIELD_PRESETS.technical_details);
+      // --- Hide the native widgets that carry data ---
+      // The five fixed-field STRING widgets and the characters_data blob must
+      // stay in node.widgets so ComfyUI serialises them and hands them to
+      // Python, but none of them should render - our DOM widget below is the
+      // real UI. Neutralise each one's canvas footprint + hide any DOM node it
+      // spawns.
+      const hiddenWidgetNames = [
+        ...FIXED_FIELDS.map((f) => f.key),
+        "characters_data",
+      ];
 
-      // --- Hidden characters_data widget (the JSON data channel) ---
-      // Must stay in node.widgets so ComfyUI serialises it and sends it to
-      // Python, but it should never render - the DOM widget below is the real
-      // UI. Neutralise its canvas draw + hide any DOM element it may spawn.
+      function neutralise(w) {
+        if (!w) return;
+        w.computeSize = () => [0, 0];
+        w.draw = () => {};
+        w.mouse = () => false;
+      }
+      function hideNativeDom(w) {
+        if (!w) return;
+        const el = w.inputEl || w.element || w.textEl || w.domElement;
+        if (el && el.style) {
+          el.style.display = "none";
+          // multiline widgets often wrap their textarea in a positioned div;
+          // collapse that too so it leaves no gap.
+          const parent = el.parentElement;
+          if (parent && parent !== node.domElement && parent.childElementCount === 1) {
+            parent.style.display = "none";
+          }
+        }
+      }
+      function hideAllNative() {
+        for (const name of hiddenWidgetNames) {
+          const w = node.widgets?.find((x) => x.name === name);
+          hideNativeDom(w);
+        }
+      }
+
+      const fixedWidgets = {};
+      for (const f of FIXED_FIELDS) {
+        const w = node.widgets?.find((x) => x.name === f.key);
+        fixedWidgets[f.key] = w || null;
+        neutralise(w);
+      }
       const dataWidget = node.widgets?.find((w) => w.name === "characters_data");
-      if (dataWidget) {
-        dataWidget.computeSize = () => [0, 0];
-        dataWidget.draw = () => {};
-        dataWidget.mouse = () => false;
-      }
+      neutralise(dataWidget);
 
+      // Character entries (parsed from the hidden blob).
       let entries = [];
       try {
         entries = dataWidget?.value ? JSON.parse(dataWidget.value) : [];
@@ -442,44 +490,96 @@ app.registerExtension({
       }
       if (!Array.isArray(entries)) entries = [];
 
-      // --- Character list DOM widget ---
-      const container = document.createElement("div");
-      container.className = "k2sp-container";
+      function persistCharacters() {
+        if (dataWidget) dataWidget.value = JSON.stringify(entries);
+        node.setDirtyCanvas(true, true);
+      }
 
+      // --- Build the single DOM widget ---
+      const container = document.createElement("div"); // registered element
+      container.style.width = "100%";
+      container.style.boxSizing = "border-box";
+
+      const content = document.createElement("div"); // measured, natural-height
+      content.className = "k2sp-container";
+      container.appendChild(content);
+
+      // Sizing: report the natural content height so ComfyUI lays the node out
+      // to fit it, and grow the node when a textarea is dragged taller or a
+      // character is added. Height is *measured* from `content` (which ComfyUI
+      // never sizes) rather than computed arithmetically, so it stays correct
+      // no matter how tall the user drags a box. Measuring the inner content
+      // div - not the widget's own registered element - avoids the feedback
+      // loop that measuring a ComfyUI-sized element would create.
+      let lastContentH = 0;
+
+      function fitNode() {
+        const need = node.computeSize();
+        if (need[1] > node.size[1]) {
+          node.setSize([node.size[0], need[1]]);
+        }
+        node.setDirtyCanvas(true, true);
+      }
+
+      function remeasure() {
+        const h = content.scrollHeight;
+        if (h && Math.abs(h - lastContentH) > 1) {
+          lastContentH = h;
+          fitNode();
+        }
+      }
+
+      const scheduleRemeasure = () => requestAnimationFrame(remeasure);
+
+      // --- Fixed fields section ---
+      for (const f of FIXED_FIELDS) {
+        content.appendChild(
+          makeField({
+            label: f.label,
+            labelClass: "k2sp-field-label",
+            presetList: FIELD_PRESETS[f.key],
+            getValue: () => fixedWidgets[f.key]?.value ?? "",
+            setValue: (v) => {
+              const w = fixedWidgets[f.key];
+              if (w) {
+                w.value = v;
+                w.callback?.(w.value);
+              }
+              node.setDirtyCanvas(true, true);
+            },
+            onResize: scheduleRemeasure,
+          })
+        );
+      }
+
+      const divider = document.createElement("hr");
+      divider.className = "k2sp-divider";
+      content.appendChild(divider);
+
+      // --- Characters section ---
       const sectionLabel = document.createElement("div");
       sectionLabel.className = "k2sp-section-label";
       sectionLabel.textContent = "Characters";
+      content.appendChild(sectionLabel);
 
       const blocksWrap = document.createElement("div");
       blocksWrap.style.display = "flex";
       blocksWrap.style.flexDirection = "column";
       blocksWrap.style.gap = "8px";
       blocksWrap.style.boxSizing = "border-box";
+      content.appendChild(blocksWrap);
 
       const nudge = document.createElement("div");
       nudge.className = "k2sp-nudge";
       nudge.style.display = "none";
       nudge.textContent =
         "⚠ Krea-2 attribute fidelity drops past ~5 characters — detail on later characters may be dropped.";
+      content.appendChild(nudge);
 
       const addBtn = document.createElement("div");
       addBtn.className = "k2sp-add-btn";
       addBtn.innerHTML = `<span>+ Add character</span>`;
-
-      function persist() {
-        if (dataWidget) dataWidget.value = JSON.stringify(entries);
-        node.setDirtyCanvas(true, true);
-      }
-
-      function hideDataWidgetDom() {
-        if (!dataWidget) return;
-        const el =
-          dataWidget.element ||
-          dataWidget.inputEl ||
-          dataWidget.textEl ||
-          dataWidget.domElement;
-        if (el && el.style) el.style.display = "none";
-      }
+      content.appendChild(addBtn);
 
       let draggedIndex = null;
 
@@ -487,8 +587,6 @@ app.registerExtension({
         const block = document.createElement("div");
         block.className = "k2sp-char-block";
 
-        // Only dragover/drop live on the block; dragstart is on the handle so
-        // clicking a textarea/select never starts a drag.
         block.ondragover = (e) => {
           if (draggedIndex === null || draggedIndex === idx) return;
           e.preventDefault();
@@ -507,11 +605,10 @@ app.registerExtension({
           const [moved] = entries.splice(draggedIndex, 1);
           entries.splice(target, 0, moved);
           draggedIndex = null;
-          persist();
+          persistCharacters();
           render();
         };
 
-        // Header: drag handle + title + remove
         const head = document.createElement("div");
         head.className = "k2sp-char-head";
 
@@ -542,9 +639,8 @@ app.registerExtension({
         remove.title = "Remove this character";
         remove.onclick = () => {
           entries.splice(idx, 1);
-          persist();
+          persistCharacters();
           render();
-          resizeNode();
         };
 
         head.appendChild(handle);
@@ -552,43 +648,20 @@ app.registerExtension({
         head.appendChild(remove);
         block.appendChild(head);
 
-        // Three sub-fields
         for (const { key, label } of CHAR_SUBFIELDS) {
-          const sub = document.createElement("div");
-          sub.className = "k2sp-subfield";
-
-          const subHead = document.createElement("div");
-          subHead.className = "k2sp-subfield-head";
-
-          const lbl = document.createElement("span");
-          lbl.className = "k2sp-subfield-label";
-          lbl.textContent = label;
-
-          const textarea = document.createElement("textarea");
-          textarea.className = "k2sp-textarea";
-          textarea.rows = 2;
-          textarea.value = entry[key] || "";
-          textarea.placeholder = label + "…";
-          textarea.oninput = () => {
-            entry[key] = textarea.value;
-            persist();
-          };
-
-          const select = makePresetSelect(
-            CHAR_PRESETS[key],
-            () => textarea.value,
-            (preset) => {
-              textarea.value = preset;
-              entry[key] = preset;
-              persist();
-            }
+          block.appendChild(
+            makeField({
+              label,
+              labelClass: "k2sp-subfield-label",
+              presetList: CHAR_PRESETS[key],
+              getValue: () => entry[key] || "",
+              setValue: (v) => {
+                entry[key] = v;
+                persistCharacters();
+              },
+              onResize: scheduleRemeasure,
+            })
           );
-
-          subHead.appendChild(lbl);
-          subHead.appendChild(select);
-          sub.appendChild(subHead);
-          sub.appendChild(textarea);
-          block.appendChild(sub);
         }
 
         return block;
@@ -607,109 +680,87 @@ app.registerExtension({
           });
         }
         nudge.style.display = entries.length > SOFT_CHAR_LIMIT ? "block" : "none";
+        scheduleRemeasure();
       }
 
       addBtn.onclick = (e) => {
         e.stopPropagation();
         entries.push({ description: "", pose_action: "", clothing_props: "" });
-        persist();
+        persistCharacters();
         render();
-        resizeNode();
       };
 
-      container.appendChild(sectionLabel);
-      container.appendChild(blocksWrap);
-      container.appendChild(nudge);
-      container.appendChild(addBtn);
-
-      node.addDOMWidget("krea2_characters_ui", "div", container, {
+      node.addDOMWidget("krea2_ui", "div", container, {
         serialize: false,
         hideOnZoom: false,
       });
 
-      // --- Sizing ---
-      // Arithmetic, not measured (measuring container height then feeding that
-      // back into constraining it is a feedback trap - same lesson as the
-      // Ultimate Lora Loader). Grow-to-fit only: the node gets tall with many
-      // characters, which is fine and predictable.
-      const BLOCK_BASE = 34; // header + block padding + borders
-      const SUBFIELD_HEIGHT = 74; // label row + 44px textarea + gaps, per sub-field
-      const BLOCK_GAP = 8;
-      const SECTION_LABEL_H = 20;
-      const ADD_BTN_H = 30;
-      const CONTAINER_PAD_V = 12;
-      const NUDGE_H = 22;
-      const EMPTY_H = 30;
-
-      function computeCharsUiHeight() {
-        const n = entries.length;
-        let blocksH;
-        if (n === 0) {
-          blocksH = EMPTY_H;
-        } else {
-          const per = BLOCK_BASE + CHAR_SUBFIELDS.length * SUBFIELD_HEIGHT;
-          blocksH = n * per + (n - 1) * BLOCK_GAP;
-        }
-        const nudgeH = n > SOFT_CHAR_LIMIT ? NUDGE_H : 0;
-        return (
-          CONTAINER_PAD_V + SECTION_LABEL_H + blocksH + nudgeH + ADD_BTN_H + 8 * 3
-        );
-      }
-
-      function resizeNode() {
-        hideDataWidgetDom();
-        // Let LiteGraph recompute the height needed for all the native widgets
-        // (the text boxes + combos) and add our DOM widget's required height on
-        // top, so the node grows to fit everything without clipping.
-        const needed = node.computeSize();
-        const target = Math.max(node.size[1], needed[1]);
-        if (target > node.size[1]) {
-          node.setSize([node.size[0], target]);
-        }
-        node.setDirtyCanvas(true, true);
-      }
-
-      // Report the DOM widget's own height so node.computeSize() accounts for
-      // it (ComfyUI calls each widget's computeSize when sizing the node).
-      const domWidget = node.widgets?.find((w) => w.name === "krea2_characters_ui");
+      const domWidget = node.widgets?.find((w) => w.name === "krea2_ui");
       if (domWidget) {
-        domWidget.computeSize = () => [node.size?.[0] || 340, computeCharsUiHeight()];
+        domWidget.computeSize = () => [
+          node.size?.[0] || 360,
+          Math.max(lastContentH, 60),
+        ];
       }
 
-      // Re-load characters + re-hide the data widget after a workflow
-      // load/paste, since onConfigure rebuilds widget state from serialised
-      // values.
+      // Watch the natural content height for changes (textarea drags, add/
+      // remove) and keep the node sized to fit.
+      if (typeof ResizeObserver !== "undefined") {
+        const ro = new ResizeObserver(() => scheduleRemeasure());
+        ro.observe(content);
+        const onRemoved = node.onRemoved;
+        node.onRemoved = function () {
+          ro.disconnect();
+          return onRemoved ? onRemoved.apply(this, arguments) : undefined;
+        };
+      }
+
+      // After a workflow load/paste, onConfigure rebuilds the native widget
+      // values from serialised data - re-sync our textareas + character list
+      // to match, and re-hide the native widgets.
       const onConfigure = node.onConfigure;
       node.onConfigure = function () {
         const r3 = onConfigure ? onConfigure.apply(this, arguments) : undefined;
-        const w = node.widgets?.find((w2) => w2.name === "characters_data");
-        if (w) {
-          w.computeSize = () => [0, 0];
-          w.draw = () => {};
-          w.mouse = () => false;
+        for (const f of FIXED_FIELDS) {
+          const w = node.widgets?.find((x) => x.name === f.key);
+          fixedWidgets[f.key] = w || null;
+          neutralise(w);
         }
+        const dw = node.widgets?.find((w2) => w2.name === "characters_data");
+        neutralise(dw);
         try {
-          entries = w?.value ? JSON.parse(w.value) : [];
+          entries = dw?.value ? JSON.parse(dw.value) : [];
         } catch (e) {
           entries = [];
         }
         if (!Array.isArray(entries)) entries = [];
+        // Re-sync fixed-field textareas from the restored native values.
+        const fieldEls = content.querySelectorAll(".k2sp-field > .k2sp-textarea");
+        FIXED_FIELDS.forEach((f, i) => {
+          const ta = fieldEls[i];
+          if (ta) ta.value = fixedWidgets[f.key]?.value ?? "";
+        });
         render();
-        resizeNode();
-        hideDataWidgetDom();
+        hideAllNative();
+        scheduleRemeasure();
         return r3;
       };
 
       render();
 
-      // Initial layout may not be final at widget-creation time; nudge it on
-      // the next tick, and retry the data-widget hide a few times in case its
-      // DOM node mounts asynchronously.
+      // Initial layout may not be final at widget-creation time; measure +
+      // re-hide the native widgets on the next ticks (their DOM nodes can
+      // mount asynchronously).
       setTimeout(() => {
-        resizeNode();
-        hideDataWidgetDom();
+        hideAllNative();
+        remeasure();
       }, 0);
-      [50, 150, 400].forEach((d) => setTimeout(hideDataWidgetDom, d));
+      [50, 150, 400].forEach((d) =>
+        setTimeout(() => {
+          hideAllNative();
+          remeasure();
+        }, d)
+      );
 
       return r;
     };
