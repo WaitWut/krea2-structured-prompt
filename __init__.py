@@ -1,4 +1,5 @@
 from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+from . import presets  # noqa: F401  registers the /krea2_structured_prompt/presets route
 
 # Tells ComfyUI where to find frontend JS/CSS for this custom node package.
 # Files under ./js are served at /extensions/krea2-structured-prompt/...
