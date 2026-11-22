@@ -26,6 +26,7 @@ Design notes:
 Files:
   nodes.py                      <- this file (assembly logic + node)
   js/krea2_structured_prompt.js <- frontend (preset combos + dynamic character list)
+  presets.py + presets/*.txt    <- preset text files, served to the frontend
 """
 
 import json
