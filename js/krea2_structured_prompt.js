@@ -152,6 +152,131 @@ if (!document.getElementById(STYLE_ID)) {
       cursor: pointer;
     }
     .k2sp-preset:focus { outline: none; border-color: #6d5aa8; color: #ddd; }
+    /* --- Preset-mode button + popover, modelled on ComfyUI's own value
+       control (seed "control after generate") --- */
+    .k2sp-seedbox {
+      flex: 0 0 104px;
+      width: 104px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 0 2px;
+      background: #1c1c1f;
+      border: 1px solid #444;
+      border-radius: 10px;
+      box-sizing: border-box;
+    }
+    .k2sp-seedbox:focus-within { border-color: #6d5aa8; }
+    .k2sp-step {
+      flex: 0 0 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      background: none;
+      border: none;
+      border-radius: 50%;
+      color: #888;
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .k2sp-step:hover { background: #333338; color: #ddd; }
+    .k2sp-seed {
+      flex: 1 1 auto;
+      min-width: 0;
+      width: 0;
+      background: none;
+      border: none;
+      color: #ddd;
+      font-size: 10.5px;
+      font-variant-numeric: tabular-nums;
+      text-align: center;
+      text-overflow: ellipsis;
+      padding: 0;
+      -moz-appearance: textfield;
+    }
+    .k2sp-seed::-webkit-inner-spin-button,
+    .k2sp-seed::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .k2sp-seed:focus { outline: none; }
+
+    .k2sp-mode {
+      flex: 0 0 26px;
+      width: 26px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #26262a;
+      border: 1px solid #444;
+      border-radius: 8px;
+      color: #999;
+      font-size: 9.5px;
+      font-weight: 600;
+      padding: 0;
+      box-sizing: border-box;
+      cursor: pointer;
+    }
+    .k2sp-mode:hover { border-color: #666; color: #ccc; }
+    .k2sp-mode.active { background: #1e2a3d; border-color: #3b82f6; color: #93c5fd; }
+    .k2sp-mode svg { width: 11px; height: 11px; }
+    .k2sp-mode-icon svg { width: 12px; height: 12px; }
+
+    .k2sp-mode-pop {
+      position: fixed;
+      z-index: 10000;
+      width: 290px;
+      box-sizing: border-box;
+      padding: 10px;
+      background: #1a1a1c;
+      border: 1px solid #3a3a40;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      color: #ddd;
+      font-family: inherit;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .k2sp-mode-pop-head { font-size: 11px; color: #999; padding: 2px 4px 6px; }
+    .k2sp-mode-pop-head b { color: #ddd; }
+    .k2sp-mode-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 4px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .k2sp-mode-row:hover { background: #26262a; }
+    .k2sp-mode-icon {
+      flex: 0 0 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #3a3a40;
+      border-radius: 6px;
+      background: #232327;
+      font-size: 11px;
+      font-weight: 600;
+      color: #ccc;
+    }
+    .k2sp-mode-text { flex: 1 1 auto; display: flex; flex-direction: column; }
+    .k2sp-mode-title { font-size: 12px; color: #eee; }
+    .k2sp-mode-desc { font-size: 10.5px; color: #999; line-height: 1.3; }
+    .k2sp-mode-radio {
+      flex: 0 0 14px;
+      height: 14px;
+      box-sizing: border-box;
+      border: 1.5px solid #666;
+      border-radius: 50%;
+    }
+    .k2sp-mode-row.selected .k2sp-mode-radio {
+      border: 4px solid #3b82f6;
+    }
 
     .k2sp-textarea {
       width: 100%;
@@ -332,10 +457,182 @@ function makePresetSelect(presetList, getCurrentText, onApply) {
   return select;
 }
 
-// Build a labelled field: header (label + preset select) + resizable textarea.
-// `getValue`/`setValue` bind it to wherever the value actually lives (a native
-// widget for fixed fields, an entry object for character sub-fields).
-function makeField({ label, labelClass, presetList, getValue, setValue, onResize }) {
+// ---------------------------------------------------------------------------
+// Preset modes - what a field does each time the prompt is queued (Run):
+//   fixed      keep the text as it is (default)
+//   random     pick a random preset (never the one already in the box)
+//   sequential pick the next preset in the list, wrapping around
+// Like ComfyUI's own seed "control after generate", the switch happens after
+// each queue by default, or before it when Settings -> "Widget control mode"
+// is set to "before". The box always shows the text that is (or will be)
+// sent, so saved workflows and image metadata record the actual prompt.
+// ---------------------------------------------------------------------------
+
+// Icons (Lucide, ISC license) and "+1" match the ones ComfyUI uses for its
+// own value-control widget, so the meaning is already familiar.
+const lucide = (paths) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ` +
+  `stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+const ICON_FIXED = lucide(
+  '<path d="m10 10-6.157 6.162a2 2 0 0 0-.5.833l-1.322 4.36a.5.5 0 0 0 .622.624l4.358-1.323a2 2 0 0 0 .83-.5L14 13.982"/>' +
+    '<path d="m12.829 7.172 4.359-4.346a1 1 0 1 1 3.986 3.986l-4.353 4.353"/>' +
+    '<path d="m15 5 4 4"/><path d="m2 2 20 20"/>'
+);
+const ICON_RANDOM = lucide(
+  '<path d="m18 14 4 4-4 4"/><path d="m18 2 4 4-4 4"/>' +
+    '<path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-7.6a4 4 0 0 1 3.3-1.7H22"/>' +
+    '<path d="M2 6h1.972a4 4 0 0 1 3.6 2.2"/>' +
+    '<path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"/>'
+);
+
+const MODE_INFO = {
+  fixed: { icon: ICON_FIXED, title: "Fixed", desc: "Keeps the seed and the text unchanged" },
+  sequential: { icon: "+1", title: "Sequential", desc: "Adds 1 to the seed: next preset in the list" },
+  random: { icon: ICON_RANDOM, title: "Random", desc: "Rolls a new seed: a random preset" },
+};
+const MODES = Object.keys(MODE_INFO);
+
+// Every field has its own preset seed: the preset in the box is
+// presets[seed % presets.length], so the same seed always brings back the same
+// preset (as long as the preset file doesn't change). The mode drives the seed
+// the way ComfyUI drives a sampler seed: fixed keeps it, sequential adds 1,
+// random rolls a new one (never landing on the preset already in use).
+const MAX_SEED = 99999; // 5 digits: far more than any preset list needs
+
+function nextSeed(mode, seed, count) {
+  if (mode === "sequential") return seed >= MAX_SEED ? 0 : seed + 1;
+  if (mode === "random") {
+    let next;
+    do {
+      next = Math.floor(Math.random() * (MAX_SEED + 1));
+    } while (count > 1 && next % count === seed % count);
+    return next;
+  }
+  return seed; // fixed
+}
+
+function makeSeedInput(getSeed, onCommit) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.inputMode = "numeric";
+  input.maxLength = String(MAX_SEED).length;
+  input.className = "k2sp-seed";
+  input.title =
+    "Preset seed - picks preset number (seed mod list length).\n" +
+    "Type a seed to bring a preset back; the mode button changes it on each run.";
+  const sync = () => {
+    input.value = String(getSeed());
+  };
+  const commit = (v) => {
+    onCommit(Math.min(Math.max(v, 0), MAX_SEED));
+    sync();
+  };
+  input.onchange = () => {
+    const v = Math.floor(Number(input.value.replace(/[^0-9]/g, "")));
+    commit(Number.isFinite(v) ? v : 0);
+  };
+  sync();
+  return { input, sync, commit };
+}
+
+// Only one popover open at a time, across all nodes.
+let closeOpenPopover = null;
+
+function openModePopover(anchor, current, onPick) {
+  closeOpenPopover?.();
+
+  const pop = document.createElement("div");
+  pop.className = "k2sp-mode-pop";
+  const when = runControlBefore() ? "BEFORE" : "AFTER";
+  pop.innerHTML = `<div class="k2sp-mode-pop-head">Automatically update the text <b>${when}</b> running the workflow:</div>`;
+
+  for (const m of MODES) {
+    const info = MODE_INFO[m];
+    const row = document.createElement("div");
+    row.className = "k2sp-mode-row" + (m === current ? " selected" : "");
+    row.innerHTML =
+      `<div class="k2sp-mode-icon">${info.icon}</div>` +
+      `<div class="k2sp-mode-text"><span class="k2sp-mode-title">${info.title}</span>` +
+      `<span class="k2sp-mode-desc">${info.desc}</span></div>` +
+      `<div class="k2sp-mode-radio"></div>`;
+    row.onclick = () => {
+      onPick(m);
+      close();
+    };
+    pop.appendChild(row);
+  }
+  document.body.appendChild(pop);
+
+  // Below the button, right-aligned to it, kept inside the viewport.
+  const r = anchor.getBoundingClientRect();
+  const w = pop.offsetWidth;
+  const h = pop.offsetHeight;
+  let left = Math.min(r.right - w, window.innerWidth - w - 8);
+  let top = r.bottom + 6;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+  pop.style.left = Math.max(8, left) + "px";
+  pop.style.top = top + "px";
+
+  const onDown = (e) => {
+    if (!pop.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) close();
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") close();
+  };
+  function close() {
+    pop.remove();
+    document.removeEventListener("pointerdown", onDown, true);
+    document.removeEventListener("keydown", onKey, true);
+    if (closeOpenPopover === close) closeOpenPopover = null;
+  }
+  document.addEventListener("pointerdown", onDown, true);
+  document.addEventListener("keydown", onKey, true);
+  closeOpenPopover = close;
+}
+
+function makeModeButton(getMode, setMode) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "k2sp-mode";
+  const mode = () => (MODES.includes(getMode()) ? getMode() : "fixed");
+  const sync = () => {
+    const info = MODE_INFO[mode()];
+    button.innerHTML = info.icon;
+    button.title = `${info.title}: ${info.desc.toLowerCase()} on each run`;
+    button.classList.toggle("active", mode() !== "fixed");
+  };
+  button.onclick = (e) => {
+    e.stopPropagation();
+    if (closeOpenPopover) {
+      closeOpenPopover(); // second click on the button just closes it
+      return;
+    }
+    openModePopover(button, mode(), (m) => {
+      setMode(m);
+      sync();
+    });
+  };
+  sync();
+  return { select: button, sync };
+}
+
+function runControlBefore() {
+  const key = "Comfy.WidgetControlMode";
+  const value =
+    app.extensionManager?.setting?.get?.(key) ??
+    app.ui?.settings?.getSettingValue?.(key);
+  return value === "before";
+}
+
+// Build a labelled field: header (label + seed + mode button + preset select)
+// + resizable textarea. `getValue`/`setValue` bind it to wherever the value
+// actually lives (a native widget for fixed fields, an entry object for
+// character sub-fields). `getControl` returns the field's {mode, seed} object
+// (created on demand) and `saveControl` persists it. A controller is pushed
+// onto `controllers` so the node can step the field when the prompt is queued.
+function makeField({
+  label, labelClass, presetList, getValue, setValue, getControl, saveControl, controllers, onResize,
+}) {
   const field = document.createElement("div");
   field.className = "k2sp-field";
 
@@ -358,16 +655,76 @@ function makeField({ label, labelClass, presetList, getValue, setValue, onResize
     new ResizeObserver(() => onResize()).observe(textarea);
   }
 
+  const getSeed = () => getControl().seed || 0;
+  const getMode = () => getControl().mode || "fixed";
+  const fill = (preset) => {
+    textarea.value = preset;
+    setValue(preset);
+  };
+
+  const seed = makeSeedInput(getSeed, (value) => {
+    if (!presetList.length) return;
+    // Same overwrite policy as the preset dropdown.
+    if (!(isKnownPresetOrEmpty(textarea.value, presetList) || confirmOverwrite())) return;
+    getControl().seed = value;
+    saveControl();
+    fill(presetList[value % presetList.length]);
+  });
+
   const select = makePresetSelect(
     presetList,
     () => textarea.value,
     (preset) => {
-      textarea.value = preset;
-      setValue(preset);
+      getControl().seed = presetList.indexOf(preset); // keep the seed in step
+      saveControl();
+      seed.sync();
+      fill(preset);
     }
   );
 
+  const mode = makeModeButton(getMode, (m) => {
+    getControl().mode = m;
+    saveControl();
+  });
+
+  controllers.push({
+    sync() {
+      mode.sync();
+      seed.sync();
+    },
+    step() {
+      const m = getMode();
+      if (m === "fixed" || !presetList.length) return;
+      const next = nextSeed(m, getSeed(), presetList.length);
+      getControl().seed = next;
+      saveControl();
+      seed.sync();
+      fill(presetList[next % presetList.length]);
+    },
+  });
+
+  // Seed pill: [ - seed (mode) + ], laid out like ComfyUI's seed widget.
+  const stepButton = (text, delta, title) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "k2sp-step";
+    b.textContent = text;
+    b.title = title;
+    b.onclick = (e) => {
+      e.stopPropagation();
+      seed.commit(getSeed() + delta); // clamped to 0..MAX_SEED
+    };
+    return b;
+  };
+  const seedbox = document.createElement("div");
+  seedbox.className = "k2sp-seedbox";
+  seedbox.appendChild(stepButton("\u2212", -1, "Previous preset (seed - 1)"));
+  seedbox.appendChild(seed.input);
+  seedbox.appendChild(mode.select);
+  seedbox.appendChild(stepButton("+", 1, "Next preset (seed + 1)"));
+
   head.appendChild(lbl);
+  head.appendChild(seedbox);
   head.appendChild(select);
   field.appendChild(head);
   field.appendChild(textarea);
@@ -492,6 +849,20 @@ app.registerExtension({
 
       const scheduleRemeasure = () => requestAnimationFrame(remeasure);
 
+      // Preset-mode controllers: fixed fields are built once, character
+      // sub-fields are rebuilt on every render().
+      const fixedControllers = [];
+      let charControllers = [];
+
+      // Fixed-field {mode, seed} pairs live in node.properties, which
+      // ComfyUI saves with the workflow; character ones live in each entry's
+      // `control` object (Python ignores it).
+      const fixedControl = (key) => {
+        node.properties ??= {};
+        const all = (node.properties.preset_control ??= {});
+        return (all[key] ??= { mode: "fixed", seed: 0 });
+      };
+
       // --- Fixed fields section ---
       for (const f of FIXED_FIELDS) {
         content.appendChild(
@@ -508,6 +879,9 @@ app.registerExtension({
               }
               node.setDirtyCanvas(true, true);
             },
+            getControl: () => fixedControl(f.key),
+            saveControl: () => node.setDirtyCanvas(true, true),
+            controllers: fixedControllers,
             onResize: scheduleRemeasure,
           })
         );
@@ -620,6 +994,12 @@ app.registerExtension({
                 entry[key] = v;
                 persistCharacters();
               },
+              getControl: () => {
+                entry.control ??= {};
+                return (entry.control[key] ??= { mode: "fixed", seed: 0 });
+              },
+              saveControl: persistCharacters,
+              controllers: charControllers,
               onResize: scheduleRemeasure,
             })
           );
@@ -630,6 +1010,7 @@ app.registerExtension({
 
       function render() {
         blocksWrap.innerHTML = "";
+        charControllers = [];
         if (entries.length === 0) {
           const empty = document.createElement("div");
           empty.className = "k2sp-empty";
@@ -662,6 +1043,19 @@ app.registerExtension({
           node.size?.[0] || 360,
           Math.max(lastContentH, 60),
         ];
+
+        // ComfyUI calls these on every widget once per queued prompt (also
+        // once per batch item), around building the prompt - the same hooks
+        // the seed widget's "control after generate" uses.
+        const stepAll = () => {
+          for (const c of [...fixedControllers, ...charControllers]) c.step();
+        };
+        domWidget.beforeQueued = () => {
+          if (runControlBefore()) stepAll();
+        };
+        domWidget.afterQueued = () => {
+          if (!runControlBefore()) stepAll();
+        };
       }
 
       // Watch the natural content height for changes (textarea drags, add/
@@ -701,6 +1095,8 @@ app.registerExtension({
           const ta = fieldEls[i];
           if (ta) ta.value = fixedWidgets[f.key]?.value ?? "";
         });
+        fixedControllers.forEach((c) => c.sync()); // properties restored
+
         render();
         hideAllNative();
         scheduleRemeasure();

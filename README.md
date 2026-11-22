@@ -33,6 +33,7 @@ Empty fields silently disappear; an entirely empty paragraph is dropped rather t
 - **Dynamic character list** — add as many characters as you like (no hard cap). Each has three sub-fields: *who / appearance*, *pose / action*, *clothing / props*. Drag by the handle to reorder, trash to remove.
 - **Soft nudge, not a wall** — past ~5 characters a muted notice appears, reflecting Krea-2's tendency to drop fine-grained per-character attributes as subject count rises. It never blocks you.
 - **Preset pickers on every field** — each fixed field and each character sub-field has a dropdown of 5 curated example prompts. Pick one to fill the box.
+- **A preset seed per field** — each field has its own seed and Fixed / Sequential / Random button, like a sampler seed: every Run can switch it to another preset, and a seed brings a preset back. See [Preset seeds and modes](#preset-seeds-and-modes).
 - **Presets are plain text files** — one `.txt` per field, one preset per line (wildcard-style). Your editable copies are created on first start and survive node updates. See [Custom presets](#custom-presets).
 - **Confirm before clobbering** — if you've typed your own text, applying a preset asks first; if the box is empty or still holds a known preset, it just fills silently.
 - **`prompt_json` debug output** — a second output dumps every raw field value as JSON, for debugging or downstream reuse.
@@ -116,6 +117,23 @@ Cold blue moonlight through tall windows
 ```
 
 Files are re-read on every page load: after editing, just **refresh the browser** — no ComfyUI restart needed.
+
+## Preset seeds and modes
+
+Every preset field (fixed fields and character sub-fields alike) has its own **preset seed**, shown next to the preset dropdown in the same `[ − seed (mode) + ]` control as a sampler's seed:
+
+- **Seed** — picks the preset: `preset number = seed mod (number of presets)`. Type a seed to bring a preset back, or use `−` / `+` to step through the list; picking from the dropdown sets the seed to match.
+- **Mode** (the icon inside the control) — what happens to the seed each time you press Run:
+
+| Icon | Mode | Each time you press Run |
+|---|---|---|
+| pencil crossed out | **Fixed** (default) | the seed and the text stay as they are |
+| `+1` | **Sequential** | the seed goes up by 1: the next preset in the list, wrapping around at the end |
+| shuffle | **Random** | a new random seed: a random preset (never the same one twice in a row) |
+
+By default the seed changes *after* each queued run, so the run uses what you see and the field then shows what the next run will use. If **Settings → Widget control mode** is set to `before`, it changes before each run instead. A batch count above 1 changes it once per queued prompt.
+
+Seeds and modes are saved with the workflow (and so in the image metadata), and the text box always holds the exact text that was sent. A seed brings back the same preset only while that field's preset file stays the same — adding or removing lines shifts the numbering. Note that Sequential and Random overwrite whatever is in the box, including text you typed yourself.
 
 ## Notes & known behavior
 
