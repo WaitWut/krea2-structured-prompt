@@ -1,4 +1,5 @@
 import { app } from "../../../scripts/app.js";
+import { api } from "../../../scripts/api.js";
 
 // ===========================================================================
 // Krea2 Structured Prompt - frontend extension
@@ -25,78 +26,37 @@ import { app } from "../../../scripts/app.js";
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// Preset content (single source of truth, frontend-only - Python never needs
-// these since assembly reads whatever ended up in the text boxes). Expand or
-// edit freely; the "Custom" sentinel is added at build time, not stored here.
+// Preset content - loaded from plain-text files, one preset per line
+// (wildcard-style), served by presets.py at /krea2_structured_prompt/presets:
+//   * <node>/presets/<name>.txt                            bundled defaults
+//   * ComfyUI/user/krea2-structured-prompt/presets/<name>.txt  your own
+// Python never needs these for assembly - it reads whatever ended up in the
+// text boxes. The "Custom" sentinel is added at build time, not stored here.
 // ---------------------------------------------------------------------------
 
 const CUSTOM = "Custom";
 
-const FIELD_PRESETS = {
-  scene: [
-    "A sun-drenched Mediterranean coastal town at golden hour, whitewashed buildings and narrow cobblestone streets",
-    "A neon-lit cyberpunk alley at night, rain-slicked pavement reflecting signage",
-    "A quiet minimalist studio with a seamless white backdrop",
-    "A dense misty forest at dawn, shafts of light breaking through the canopy",
-    "An abandoned industrial warehouse, dusty light streaming through broken windows",
-  ],
-  composition: [
-    "Medium shot, eye-level, shallow depth of field",
-    "Low-angle wide shot emphasizing scale and grandeur",
-    "Extreme close-up, sharp focus on texture and detail",
-    "Symmetrical centered composition, wide shot",
-    "Dutch tilt, dynamic diagonal framing",
-  ],
-  lighting: [
-    "Soft diffused window light, gentle shadows",
-    "Golden hour side lighting, warm glow",
-    "Harsh overhead studio lighting, high contrast",
-    "Dramatic cinematic rim light against a dark background",
-    "Even soft studio lighting, minimal shadow, high-key",
-  ],
-  style: [
-    "Photorealistic photography, cinematic color grading",
-    "Digital painting, visible brushwork, painterly",
-    "Editorial fashion photography, high-contrast",
-    "Moody concept art, atmospheric",
-    "Film grain, analog texture, raw aesthetic",
-  ],
-  technical_details: [
-    "Shot on 35mm film, subtle grain",
-    "Wide-angle lens, slight perspective distortion",
-    "Shallow depth of field, bokeh background",
-    "Long exposure, motion blur on moving elements",
-    "High dynamic range, crisp detail throughout",
-  ],
-};
+// Filled in by loadPresets() before any node is created. Keys match the file
+// names: FIELD_PRESETS.scene <- scene.txt, CHAR_PRESETS.description <-
+// character_description.txt, and so on. Character sub-field presets are
+// generic - one list per sub-field, reused for every character.
+const FIELD_PRESETS = {};
+const CHAR_PRESETS = {};
 
-// Generic per-character sub-field presets - one list per sub-field, reused for
-// every character regardless of role (the who / doing-what / wearing-what
-// split already separates concerns well enough that generic presets
-// mix-and-match freely).
-const CHAR_PRESETS = {
-  description: [
-    "A woman in her 30s with short dark hair and sharp features",
-    "An elderly man with weathered skin and a thick white beard",
-    "A young androgynous figure with an undercut and freckles",
-    "A muscular man in his 40s with a shaved head and a stern expression",
-    "A slight, wide-eyed teenager with curly red hair",
-  ],
-  pose_action: [
-    "Standing confidently, arms crossed, gazing directly at camera",
-    "Mid-stride, walking away, glancing back over one shoulder",
-    "Seated, leaning forward, hands clasped in thought",
-    "Reaching upward, caught mid-motion",
-    "Crouched low, alert and watchful",
-  ],
-  clothing_props: [
-    "Tailored charcoal wool coat, leather gloves",
-    "Flowing linen dress, bare feet, straw sun hat",
-    "Distressed denim jacket, band t-shirt, combat boots",
-    "Formal black suit, no tie, top button undone",
-    "Worn leather satchel slung across the chest, fingerless gloves",
-  ],
-};
+let presetsLoaded = null;
+function loadPresets() {
+  presetsLoaded ??= api
+    .fetchApi("/krea2_structured_prompt/presets")
+    .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+    .then((data) => {
+      Object.assign(FIELD_PRESETS, data.fields || {});
+      Object.assign(CHAR_PRESETS, data.characters || {});
+    })
+    .catch((err) => {
+      console.warn("[Krea2 Structured Prompt] Could not load presets:", err);
+    });
+  return presetsLoaded;
+}
 
 // The five fixed fields, in on-node display order. `key` matches the native
 // STRING widget name declared in INPUT_TYPES.
@@ -423,6 +383,7 @@ app.registerExtension({
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name !== "Krea2StructuredPrompt") return;
+    await loadPresets();
 
     const onNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
@@ -537,7 +498,7 @@ app.registerExtension({
           makeField({
             label: f.label,
             labelClass: "k2sp-field-label",
-            presetList: FIELD_PRESETS[f.key],
+            presetList: FIELD_PRESETS[f.key] || [],
             getValue: () => fixedWidgets[f.key]?.value ?? "",
             setValue: (v) => {
               const w = fixedWidgets[f.key];
@@ -653,7 +614,7 @@ app.registerExtension({
             makeField({
               label,
               labelClass: "k2sp-subfield-label",
-              presetList: CHAR_PRESETS[key],
+              presetList: CHAR_PRESETS[key] || [],
               getValue: () => entry[key] || "",
               setValue: (v) => {
                 entry[key] = v;

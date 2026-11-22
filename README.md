@@ -33,6 +33,7 @@ Empty fields silently disappear; an entirely empty paragraph is dropped rather t
 - **Dynamic character list** — add as many characters as you like (no hard cap). Each has three sub-fields: *who / appearance*, *pose / action*, *clothing / props*. Drag by the handle to reorder, trash to remove.
 - **Soft nudge, not a wall** — past ~5 characters a muted notice appears, reflecting Krea-2's tendency to drop fine-grained per-character attributes as subject count rises. It never blocks you.
 - **Preset pickers on every field** — each fixed field and each character sub-field has a dropdown of 5 curated example prompts. Pick one to fill the box.
+- **Presets are plain text files** — one `.txt` per field, one preset per line (wildcard-style). Your editable copies are created on first start and survive node updates. See [Custom presets](#custom-presets).
 - **Confirm before clobbering** — if you've typed your own text, applying a preset asks first; if the box is empty or still holds a known preset, it just fills silently.
 - **`prompt_json` debug output** — a second output dumps every raw field value as JSON, for debugging or downstream reuse.
 - **Zero dependencies** — pure standard-library string assembly. Nothing to `pip install`.
@@ -55,6 +56,9 @@ ComfyUI/custom_nodes/krea2-structured-prompt/
 ├── pyproject.toml
 ├── LICENSE
 ├── README.md
+├── presets.py
+├── presets/
+│   └── *.txt
 └── js/
     └── krea2_structured_prompt.js
 ```
@@ -83,11 +87,41 @@ Given two characters and a scene, plus composition/lighting/style, the output re
 
 No labels, no keyword lists — just prose in Krea-2's trained order.
 
+## Custom presets
+
+Every preset dropdown reads a plain text file — one preset per line, like a wildcard file. Blank lines and lines starting with `#` are ignored.
+
+| Dropdown | File |
+|---|---|
+| Scene | `scene.txt` |
+| Composition | `composition.txt` |
+| Lighting | `lighting.txt` |
+| Style | `style.txt` |
+| Technical details | `technical_details.txt` |
+| Character → Who / appearance | `character_description.txt` |
+| Character → Pose / action | `character_pose_action.txt` |
+| Character → Clothing / props | `character_clothing_props.txt` |
+
+**Edit your presets in `ComfyUI/user/krea2-structured-prompt/presets/`.** On startup the node creates that folder with all eight files, pre-filled with the bundled defaults as examples. Add, rewrite or delete lines freely — when a file exists there, it replaces the bundled list, and it lives outside the node folder, so updates never touch it. Delete a file to get the defaults back on the next ComfyUI start. (If you start ComfyUI with `--user-directory`, the folder is `<user-directory>/krea2-structured-prompt/presets/`.)
+
+The bundled defaults themselves live in `krea2-structured-prompt/presets/` and are replaced on every update, so don't keep your edits there.
+
+For example, `ComfyUI/user/krea2-structured-prompt/presets/lighting.txt`:
+
+```
+# My lighting presets
+Soft diffused window light, gentle shadows
+Warm candlelight, deep shadows, intimate mood
+Cold blue moonlight through tall windows
+```
+
+Files are re-read on every page load: after editing, just **refresh the browser** — no ComfyUI restart needed.
+
 ## Notes & known behavior
 
 - **Character count is unlimited by design.** Krea-2 follows scene structure well but starts dropping fine-grained per-character attributes as constraint density rises (roughly past 4–5 subjects). The node nudges but never restricts — split very dense scenes across multiple generations if fidelity matters.
 - **The preset dropdowns are convenience fillers only.** The multiline text box is the single source of truth read at generation time; the dropdown just writes into it and resets itself.
-- **Character sub-field presets are generic**, reused across every character regardless of role. Role/archetype-flavoured preset packs are a possible future addition (content only, no mechanism change).
+- **Character sub-field presets are generic**, reused across every character regardless of role. Role/archetype-flavoured preset packs are a possible future addition (content only — just more `.txt` lines).
 
 ## Roadmap
 
